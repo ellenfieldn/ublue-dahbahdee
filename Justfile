@@ -1,8 +1,7 @@
-export repo_organization := env("GITHUB_REPOSITORY_OWNER", "yourname")
-export image_name := env("IMAGE_NAME", "yourimage")
+export repo_organization := env("GITHUB_REPOSITORY_OWNER", "ellenfieldn")
+export image_name := env("IMAGE_NAME", "ublue-dahbahdee")
 export default_tag := env("DEFAULT_TAG", "latest")
 export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
-
 export SUDO_DISPLAY := if `if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then echo true; fi` == "true" { "true" } else { "false" }
 export SUDOIF := if `id -u` == "0" { "" } else { if SUDO_DISPLAY == "true" { "sudo --askpass" } else { "sudo" } }
 export PODMAN := if path_exists("/usr/bin/podman") == "true" { env("PODMAN", "/usr/bin/podman") } else { if path_exists("/usr/bin/docker") == "true" { env("PODMAN", "docker") } else { env("PODMAN", "exit 1 ; ") } }
@@ -56,12 +55,13 @@ sudo-clean:
 
 build $target_image=image_name $tag=default_tag:
     #!/usr/bin/env bash
+    set -eoux pipefail
 
     # Get Version
     ver="${tag}-$(date +%Y%m%d)"
 
     BUILD_ARGS=()
-    BUILD_ARGS+=("--build-arg" "IMAGE_NAME=${image_name}")
+    BUILD_ARGS+=("--build-arg" "IMAGE_NAME=${target_image}")
     BUILD_ARGS+=("--build-arg" "IMAGE_VENDOR=${repo_organization}")
     if [[ -z "$(git status -s)" ]]; then
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
@@ -70,7 +70,7 @@ build $target_image=image_name $tag=default_tag:
     ${PODMAN} build \
         "${BUILD_ARGS[@]}" \
         --pull=newer \
-        --tag "${image_name}:${tag}" \
+        --tag "${target_image}:${tag}" \
         .
 
 _rootful_load_image $target_image=image_name $tag=default_tag:
@@ -88,51 +88,56 @@ _rootful_load_image $target_image=image_name $tag=default_tag:
     set -e
 
     if [[ $return_code -eq 0 ]]; then
+        echo "loading image into rootful podman"
         # Load into Rootful ${PODMAN}
         ID=$(${SUDOIF} ${PODMAN} images --filter reference="${target_image}:${tag}" --format "'{{ '{{.ID}}' }}'")
         if [[ -z "$ID" ]]; then
+            # Copy the image to a temporary directory
+            echo "Copying image ${target_image}:${tag} to temporary directory"
             COPYTMP=$(mktemp -p "${PWD}" -d -t _build_podman_scp.XXXXXXXXXX)
             ${SUDOIF} TMPDIR=${COPYTMP} ${PODMAN} image scp ${UID}@localhost::"${target_image}:${tag}" root@localhost::"${target_image}:${tag}"
             rm -rf "${COPYTMP}"
         fi
     else
         # Make sure the image is present and/or up to date
+        echo "Pulling image ${target_image}:${tag}"
         ${SUDOIF} ${PODMAN} pull "${target_image}:${tag}"
     fi
 
 _build-bib $target_image $tag $type $config: (_rootful_load_image target_image tag)
     #!/usr/bin/env bash
-    set -euo pipefail
+    set -euox pipefail
 
     mkdir -p "output"
 
     echo "Cleaning up previous build"
     if [[ $type == iso ]]; then
-      sudo rm -rf "output/bootiso" || true
+        sudo rm -rf "output/bootiso" || true
     else
-      sudo rm -rf "output/${type}" || true
+        sudo rm -rf "output/${type}" || true
     fi
 
     args="--type ${type}"
 
     if [[ $target_image == localhost/* ]]; then
-      args+=" --local"
+        args+=" --local"
     fi
 
     sudo ${PODMAN} run \
-      --rm \
-      -it \
-      --privileged \
-      --pull=newer \
-      --net=host \
-      --security-opt label=type:unconfined_t \
-      -v $(pwd)/${config}:/config.toml:ro \
-      -v $(pwd)/output:/output \
-      -v /var/lib/containers/storage:/var/lib/containers/storage \
-      "${bib_image}" \
-      --rootfs btrfs \
-      ${args} \
-      "${target_image}"
+        --rm \
+        -it \
+        --privileged \
+        --pull=newer \
+        --net=host \
+        --security-opt label=type:unconfined_t \
+        -v $(pwd)/${config}:/config.toml:ro \
+        -v $(pwd)/output:/output \
+        -v /var/lib/containers/storage:/var/lib/containers/storage \
+        "${bib_image}" \
+        --rootfs btrfs \
+        --log-level=debug \
+        ${args} \
+        "${target_image}"
 
     sudo chown -R $USER:$USER output
 

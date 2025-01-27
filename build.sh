@@ -2,6 +2,17 @@
 
 set -ouex pipefail
 
+mkdir -p /var/lib/alternatives
+
+### Remove CLI Wrap
+# ublue-os/main does a command called rpm-ostree cliwrap that makes dnf be a 
+# symlink to rpm-ostree.
+# This breaks the bootc image builder.
+# We need to remove the cliwrap and make dnf5 the default package manager.
+echo "::group:: ===Remove CLI Wrap==="
+/tmp/remove-cliwrap.sh
+echo "::endgroup::"
+
 ### Install packages
 
 # Packages can be installed from any enabled yum repo on the image.
@@ -10,7 +21,7 @@ set -ouex pipefail
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/39/x86_64/repoview/index.html&protocol=https&redirect=1
 
 # this installs a package from fedora repos
-dnf install -y tmux 
+#dnf install -y tmux 
 
 # Use a COPR Example:
 #
@@ -21,4 +32,4 @@ dnf install -y tmux
 
 #### Example for enabling a System Unit File
 
-systemctl enable podman.socket
+#systemctl enable podman.socket
