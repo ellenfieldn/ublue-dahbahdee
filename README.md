@@ -45,6 +45,21 @@ This file defines the operations used to customize the selected image. It contai
 - add additional RPM packages
 - add binaries as a layer from other images
 
+## Testing Locally
+
+Here are the steps for testing locally
+```bash
+# Just build the image
+just build
+
+# Build a vm image
+just build-vm
+
+# Build and run a vm image
+just build-vm
+just run-vm
+```
+
 ## Building an ISO
 
 Modify `iso.toml` to point to your custom image before generating an ISO.
